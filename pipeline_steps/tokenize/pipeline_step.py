@@ -57,7 +57,9 @@ def tokenize_captions(dataset_path, preprocess_output, output_dir, top_k):
     cap_vector_file_path = OUTPUT_DIR + 'cap_vector.npy'
     np.save(file_io.FileIO(cap_vector_file_path, 'w'), cap_vector)
     
-    return str(max_length), tokenizer_file_path, cap_vector_file_path
+    print(max_length)
+
+    return str(max_length)#, tokenizer_file_path, cap_vector_file_path
 
 if __name__ == "__main__":
     tokenize_captions()

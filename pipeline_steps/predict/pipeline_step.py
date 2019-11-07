@@ -13,27 +13,40 @@ import click
 @click.command()
 @click.option('--dataset-path', default="/mnt/ms-coco")
 @click.option('--preprocess-output-dir', default="default")
+@click.option('--valid-output-dir', default='default')
+@click.option('--tokenizing-output-dir', default='default')
+@click.option('--model-train-output-dir', default='default')
+@click.option('--max-length', default=44)
+@click.option('--units', default=512)
+@click.option('--embedding_dim', default=256)
 
-def predict(dataset_path: str, tokenizing_output: str, 
-        model_train_output: str, preprocess_output_dir: str, 
-        valid_output_dir: str, embedding_dim: int, units: int):
+def predict(dataset_path: str, tokenizing_output_dir: str, 
+        model_train_output_dir: str, preprocess_output_dir: str, 
+        embedding_dim: int, units: int, valid_output_dir:str, max_length: int):
     
-    tokenizing_output = make_tuple(tokenizing_output)
-    model_train_output = make_tuple(model_train_output)
+    # tokenizing_output = make_tuple(tokenizing_output)
+    # model_train_output = make_tuple(model_train_output)
     
     # Unpack tuples
-    max_length = int(tokenizing_output[0])
-    tokenizer_path = tokenizing_output[1]
-    model_path = model_train_output[0]
-    val_cap_path = model_train_output[1]
-    val_img_path = model_train_output[2]
+    # max_length = int(tokenizing_output[0])
+    # tokenizer_path = tokenizing_output[1]
+    # model_path = model_train_output[0]
+    # val_cap_path = model_train_output[1]
+    # val_img_path = model_train_output[2]
     
     if preprocess_output_dir == 'default':
         preprocess_output_dir = dataset_path + '/preprocess/'
     
     if valid_output_dir == 'default':
         valid_output_dir = dataset_path + '/valid/'
-        
+    
+    if tokenizing_output_dir == 'default':
+        tokenizer_path = dataset_path + '/tokenize/tokenizer.pickle'
+
+    print("tokenizer_path: ", tokenizer_path)
+    
+    val_cap_path = valid_output_dir + '/captions.npy'
+    val_img_path = valid_output_dir + '/images.npy'
     tensorboard_dir = valid_output_dir + 'logs' + datetime.now().strftime("%Y%m%d-%H%M%S")
     summary_writer = tf.summary.create_file_writer(tensorboard_dir)
 
@@ -56,7 +69,8 @@ def predict(dataset_path: str, tokenizing_output: str,
     optimizer = tf.keras.optimizers.Adam()
     ckpt = tf.train.Checkpoint(encoder=encoder,
                            decoder=decoder, optimizer=optimizer)
-    ckpt.restore(model_path).expect_partial()
+    ckpt_manager = tf.train.CheckpointManager(ckpt, model_train_output_dir + 'checkpoints/', max_to_keep=5)
+    ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
     
     # Load test captions
     f = BytesIO(file_io.read_file_to_string(val_cap_path, 
@@ -160,5 +174,8 @@ def predict(dataset_path: str, tokenizing_output: str,
             'source': tensorboard_dir,
         }]
     }
-    with open('/mlpipeline-ui-metadata.json', 'w') as f:
-        json.dump(metadata, f)
+    # with open('/mlpipeline-ui-metadata.json', 'w') as f:
+    #     json.dump(metadata, f)
+
+if __name__ == "__main__":
+    predict()

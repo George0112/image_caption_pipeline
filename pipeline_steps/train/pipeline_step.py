@@ -11,6 +11,7 @@ from tensorflow.python.lib.io import file_io
 from ast import literal_eval as make_tuple
 import click
 import os
+import matplotlib.pyplot as plt
 
 @click.command()
 @click.option('--dataset-path', default="/mnt/ms-coco")
@@ -125,8 +126,10 @@ def train_model(dataset_path: str, preprocess_output: str,
                            optimizer = optimizer)
     ckpt_manager = tf.train.CheckpointManager(ckpt, train_output_dir + 'checkpoints/', max_to_keep=5)
     start_epoch = 0
+    print('latest checkpoint: ', ckpt_manager.latest_checkpoint)
     if ckpt_manager.latest_checkpoint:
-        start_epoch = int(ckpt_manager.latest_checkpoint.split('-')[-1])
+        start_epoch = int(ckpt_manager.latest_checkpoint.split('-')[-1])*5
+        ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
             
     # Create training step
     loss_plot = []
@@ -179,13 +182,12 @@ def train_model(dataset_path: str, preprocess_output: str,
             batch_loss, t_loss = train_step(img_tensor, target)
             total_loss += t_loss
             train_loss(t_loss)
-            # if batch % 100 == 0:
-            print ('Epoch {} Batch {} Loss {:.4f}'.format(
-                epoch + 1, batch, batch_loss.numpy() / int(target.shape[1])))
-        
-        
+            if batch % 100 == 0:
+                print ('Epoch {} Batch {} Loss {:.4f}'.format(
+                    epoch + 1, batch, batch_loss.numpy() / int(target.shape[1])))
         
         # Storing the epoch end loss value to plot in tensorboard
+        loss_plot.append(total_loss / num_steps)
         with train_summary_writer.as_default():
             tf.summary.scalar('loss per epoch', train_loss.result(), step=epoch)
         
@@ -198,6 +200,20 @@ def train_model(dataset_path: str, preprocess_output: str,
                                              total_loss/num_steps))
         print ('Time taken for 1 epoch {} sec\n'.format(time.time() - start))
     
+    plt.plot(loss_plot)
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.title('Loss Plot')
+    plt.xticks(range(start_epoch, epochs))
+    plt.show()
+
+    # Save validation data to use for predictions
+    val_cap_path = valid_output_dir + '/captions.npy'
+    np.save(file_io.FileIO(val_cap_path, 'w'), cap_val)
+    
+    val_img_path = valid_output_dir + '/images.npy'
+    np.save(file_io.FileIO(val_img_path, 'w'), img_name_val)
+
     # Add plot of loss in tensorboard
     metadata ={
         'outputs': [{
@@ -207,14 +223,7 @@ def train_model(dataset_path: str, preprocess_output: str,
     }
     with open('/mlpipeline-ui-metadata.json', 'w') as f:
         json.dump(metadata, f)
-    
-    # Save validation data to use for predictions
-    val_cap_path = valid_output_dir + 'captions.npy'
-    np.save(file_io.FileIO(val_cap_path, 'w'), cap_val)
-    
-    val_img_path = valid_output_dir + 'images.npy'
-    np.save(file_io.FileIO(val_img_path, 'w'), img_name_val)
-    
+   
     return path_to_most_recent_ckpt, val_cap_path, val_img_path
 
 if __name__ == "__main__":
