@@ -1,8 +1,0 @@
-[I 07:57:01.806 NotebookApp] Serving notebooks from local directory: /home/chao/kubeflow_dev/image_caption_volume/pipeline_steps/train
-[I 07:57:01.806 NotebookApp] The Jupyter Notebook is running at:
-[I 07:57:01.806 NotebookApp] http://master-node:8888/
-[I 07:57:01.806 NotebookApp] Use Control-C to stop this server and shut down all kernels (twice to skip confirmation).
-[W 07:57:02.797 NotebookApp] 404 GET /tree/kubeflow_dev/image_caption_volume (140.114.79.80) 947.69ms referer=None
-[14477:14477:1106/075714.394885:ERROR:sandbox_linux.cc(369)] InitializeSandbox() called with multiple threads in process gpu-process.
-[C 07:57:15.758 NotebookApp] received signal 15, stopping
-[I 07:57:15.760 NotebookApp] Shutting down 0 kernels

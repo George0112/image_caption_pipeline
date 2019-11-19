@@ -1,0 +1,4 @@
+click
+sklearn
+matplotlib
+tensorflow-gpu

@@ -12,20 +12,16 @@ from ast import literal_eval as make_tuple
 import click
 import os
 import matplotlib.pyplot as plt
+from collections import namedtuple
 
 @click.command()
 @click.option('--dataset-path', default="/mnt/ms-coco")
-@click.option('--preprocess-output', default='/mnt/ms-coco/preprocess/')
-@click.option('--tokenize-output', default='/mnt/ms-coco/tokenize')
-@click.option('--train-output-dir', default='default')
-@click.option('--valid-output-dir', default='default')
 @click.option('--batch-size', default=8)
 @click.option('--embedding-dim', default=256)
 @click.option('--units', default=512)
 @click.option('--epochs', default=20)
 
-def train_model(dataset_path: str, preprocess_output: str, 
-        tokenize_output: str, train_output_dir: str, valid_output_dir: str, 
+def train_model(dataset_path: str,  
         batch_size: int, embedding_dim: int, units: int, epochs: int):
     
     print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
@@ -38,15 +34,11 @@ def train_model(dataset_path: str, preprocess_output: str,
     # preprocessed_imgs_path = preprocess_output[1]
     # tokenizer_path = tokenizing_output[1]
     # cap_vector_file_path = tokenizing_output[2]
-    preprocessed_imgs_path = preprocess_output + '/preprocessed_imgs.py'
-    tokenizer_path = tokenize_output + '/tokenizer.pickle'
-    cap_vector_file_path = tokenize_output + '/cap_vector.npy'
-    
-    if valid_output_dir == 'default':
-        valid_output_dir = dataset_path + '/valid/'
-    
-    if train_output_dir == 'default':
-        train_output_dir = dataset_path + '/train/'
+    preprocessed_imgs_path = dataset_path + '/preprocess/preprocessed_imgs.npy'
+    tokenizer_path = dataset_path + '/tokenize/tokenizer.pickle'
+    cap_vector_file_path = dataset_path + '/tokenize/cap_vector.npy'
+    valid_output_dir = dataset_path + '/valid/'
+    train_output_dir = dataset_path + '/train/'
 
     if not (os.path.isdir(valid_output_dir)):
         os.mkdir(valid_output_dir)
@@ -55,13 +47,13 @@ def train_model(dataset_path: str, preprocess_output: str,
         os.mkdir(train_output_dir)
     
     # load img_name_vector
-    f = BytesIO(file_io.read_file_to_string(preprocessed_imgs_path, binary_mode=True))
-    img_name_vector = np.load(f)
-    print(img_name_vector)
+    # f = BytesIO(file_io.read_file_to_string(preprocessed_imgs_path, binary_mode=True))
+    img_name_vector = np.load(preprocessed_imgs_path)
+    print(img_name_vector[:5])
     
     # Load cap_vector
-    f = BytesIO(file_io.read_file_to_string(cap_vector_file_path, binary_mode=True))
-    cap_vector = np.load(f)
+    # f = BytesIO(file_io.read_file_to_string(cap_vector_file_path, binary_mode=True))
+    cap_vector = np.load(cap_vector_file_path)
     
     # Load tokenizer
     with file_io.FileIO(tokenizer_path, 'rb') as src:
@@ -75,7 +67,7 @@ def train_model(dataset_path: str, preprocess_output: str,
                                                             random_state=0)
     
     # Create tf.data dataset for training
-    BUFFER_SIZE = 500 # common size used for shuffling dataset
+    BUFFER_SIZE = 1000 # common size used for shuffling dataset
     vocab_size = len(tokenizer.word_index) + 1
     num_steps = len(img_name_train) // batch_size
 
@@ -129,7 +121,7 @@ def train_model(dataset_path: str, preprocess_output: str,
     print('latest checkpoint: ', ckpt_manager.latest_checkpoint)
     if ckpt_manager.latest_checkpoint:
         start_epoch = int(ckpt_manager.latest_checkpoint.split('-')[-1])*5
-        ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
+        ckpt.restore(ckpt_manager.latest_checkpoint)
             
     # Create training step
     loss_plot = []
@@ -166,12 +158,23 @@ def train_model(dataset_path: str, preprocess_output: str,
         return loss, total_loss
     
     # Create summary writers and loss for plotting loss in tensorboard
-    tensorboard_dir = train_output_dir + 'logs/' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_dir = train_output_dir + 'logs/' #+ datetime.now().strftime("%Y%m%d-%H%M%S")
     train_summary_writer = tf.summary.create_file_writer(tensorboard_dir)
     train_loss = tf.keras.metrics.Mean('train_loss', dtype=tf.float32)
     
     # Train model
     path_to_most_recent_ckpt = None
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
     for epoch in range(start_epoch, epochs):
         start = time.time()
         total_loss = 0
@@ -214,16 +217,30 @@ def train_model(dataset_path: str, preprocess_output: str,
     val_img_path = valid_output_dir + '/images.npy'
     np.save(file_io.FileIO(val_img_path, 'w'), img_name_val)
 
+    # Save train data
+    val_cap_path = valid_output_dir + '/train_captions.npy'
+    np.save(file_io.FileIO(val_cap_path, 'w'), cap_train)
+    
+    val_img_path = valid_output_dir + '/train_images.npy'
+    np.save(file_io.FileIO(val_img_path, 'w'), img_name_train)
+
     # Add plot of loss in tensorboard
-    metadata ={
-        'outputs': [{
-            'type': 'tensorboard',
-            'source': tensorboard_dir,
-        }]
+    metadata = {
+        'outputs': [
+            {
+                'storage': 'inline',
+                'source': '# Loss: ' + str(float(total_loss/num_steps)),
+                'type': 'markdown',
+            }
+        ]
     }
     with open('/mlpipeline-ui-metadata.json', 'w') as f:
         json.dump(metadata, f)
-   
+
+    print(float(total_loss / num_steps))
+    
+    divmod_output = namedtuple('output', ['mlpipeline_ui_metadata'])
+    return divmod_output(json.dumps(metadata))
     return path_to_most_recent_ckpt, val_cap_path, val_img_path
 
 if __name__ == "__main__":

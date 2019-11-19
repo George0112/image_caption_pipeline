@@ -9,45 +9,34 @@ from io import BytesIO
 from tensorflow.python.lib.io import file_io
 from ast import literal_eval as make_tuple
 import click
+from collections import namedtuple
 
 @click.command()
 @click.option('--dataset-path', default="/mnt/ms-coco")
-@click.option('--preprocess-output-dir', default="default")
-@click.option('--valid-output-dir', default='default')
-@click.option('--tokenizing-output-dir', default='default')
-@click.option('--model-train-output-dir', default='default')
-@click.option('--max-length', default=44)
+@click.option('--max-length', default=50)
 @click.option('--units', default=512)
-@click.option('--embedding_dim', default=256)
+@click.option('--embedding-dim', default=256)
 
-def predict(dataset_path: str, tokenizing_output_dir: str, 
-        model_train_output_dir: str, preprocess_output_dir: str, 
-        embedding_dim: int, units: int, valid_output_dir:str, max_length: int):
+def predict(dataset_path: str, 
+        embedding_dim: int, units: int, max_length: int):
     
-    # tokenizing_output = make_tuple(tokenizing_output)
-    # model_train_output = make_tuple(model_train_output)
+    # if tokenizing_output != 'default':
+    #     tokenizing_output = make_tuple(tokenizing_output)
+    #     max_length = int(tokenizing_output[0])
     
-    # Unpack tuples
-    # max_length = int(tokenizing_output[0])
-    # tokenizer_path = tokenizing_output[1]
-    # model_path = model_train_output[0]
-    # val_cap_path = model_train_output[1]
-    # val_img_path = model_train_output[2]
+    preprocess_output_dir = dataset_path + '/preprocess'
     
-    if preprocess_output_dir == 'default':
-        preprocess_output_dir = dataset_path + '/preprocess/'
+    valid_output_dir = dataset_path + '/valid'
     
-    if valid_output_dir == 'default':
-        valid_output_dir = dataset_path + '/valid/'
-    
-    if tokenizing_output_dir == 'default':
-        tokenizer_path = dataset_path + '/tokenize/tokenizer.pickle'
+    tokenizer_path = dataset_path + '/tokenize/tokenizer.pickle'
+
+    model_train_output_dir = dataset_path + '/train'
 
     print("tokenizer_path: ", tokenizer_path)
     
     val_cap_path = valid_output_dir + '/captions.npy'
     val_img_path = valid_output_dir + '/images.npy'
-    tensorboard_dir = valid_output_dir + 'logs' + datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_dir = valid_output_dir + '/logs/' #+ datetime.now().strftime("%Y%m%d-%H%M%S")
     summary_writer = tf.summary.create_file_writer(tensorboard_dir)
 
     # Load tokenizer, model, test_captions, and test_imgs
@@ -57,7 +46,9 @@ def predict(dataset_path: str, tokenizing_output_dir: str,
         tokenizer = pickle.load(src)
     
     vocab_size = len(tokenizer.word_index) + 1
-    
+
+    print("vocab_size: ", vocab_size)
+
     # Shape of the vector extracted from InceptionV3 is (64, 2048)
     attention_features_shape = 64
     features_shape = 2048
@@ -69,9 +60,12 @@ def predict(dataset_path: str, tokenizing_output_dir: str,
     optimizer = tf.keras.optimizers.Adam()
     ckpt = tf.train.Checkpoint(encoder=encoder,
                            decoder=decoder, optimizer=optimizer)
-    ckpt_manager = tf.train.CheckpointManager(ckpt, model_train_output_dir + 'checkpoints/', max_to_keep=5)
-    ckpt.restore(ckpt_manager.latest_checkpoint).expect_partial()
-    
+    ckpt_manager = tf.train.CheckpointManager(ckpt, model_train_output_dir + '/checkpoints', max_to_keep=5)
+    ckpt.restore(ckpt_manager.latest_checkpoint)
+    if ckpt_manager.latest_checkpoint:
+        print("Restored from {}".format(ckpt_manager.latest_checkpoint))
+    else:
+        print("Initializing from scratch.")
     # Load test captions
     f = BytesIO(file_io.read_file_to_string(val_cap_path, 
                                             binary_mode=True))
@@ -85,9 +79,12 @@ def predict(dataset_path: str, tokenizing_output_dir: str,
     # To get original image locations, replace .npy extension with .jpg and 
     # replace preprocessed path with path original images
     PATH = dataset_path + '/train2014/train2014/'
+    print(img_name_val[0])
     img_name_val = [img.replace('.npy', '.jpg') for img in img_name_val]
     img_name_val = [img.replace(preprocess_output_dir, PATH) for img in img_name_val]
-    
+    print(preprocess_output_dir)
+    print(img_name_val[0])
+
     image_model = tf.keras.applications.InceptionV3(include_top=False,
                                                 weights='imagenet')
     new_input = image_model.input
@@ -160,6 +157,7 @@ def predict(dataset_path: str, tokenizing_output_dir: str,
     # Select a random image to caption from validation set
     rid = np.random.randint(0, len(img_name_val))
     image = img_name_val[rid]
+    print(image)
     real_caption = ' '.join([tokenizer.index_word[i] for i in cap_val[rid] if i not in [0]])
     result, attention_plot = evaluate(image)
     print ('Image:', image)
@@ -169,13 +167,21 @@ def predict(dataset_path: str, tokenizing_output_dir: str,
     
     # Plot attention images on tensorboard
     metadata = {
-        'outputs': [{
-            'type': 'tensorboard',
-            'source': tensorboard_dir,
-        }]
+        'outputs': [
+            {
+                'storage': 'inline',
+                'source': ('# Predicted figure: ![](http://140.114.79.72:31381/ms-coco/train2014/train2014/' + image.split('/')[-1] + ')' + 
+                    '\n  # Real Caption: ' + real_caption + '\n # Predicted Caption: ' + ' '.join(result)),
+                'type': 'markdown',
+            }
+        ]
     }
-    # with open('/mlpipeline-ui-metadata.json', 'w') as f:
-    #     json.dump(metadata, f)
+    print(metadata)
+    with open('/mlpipeline-ui-metadata.json', 'w') as f:
+        json.dump(metadata, f)
+        
+    divmod_output = namedtuple('output', ['mlpipeline_ui_metadata'])
+    return divmod_output(json.dumps(metadata))
 
 if __name__ == "__main__":
     predict()
