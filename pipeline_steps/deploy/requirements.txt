@@ -2,3 +2,4 @@ click
 sklearn
 matplotlib
 tensorflow-gpu
+wget

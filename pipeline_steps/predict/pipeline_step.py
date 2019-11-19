@@ -19,7 +19,7 @@ from collections import namedtuple
 
 def predict(dataset_path: str, 
         embedding_dim: int, units: int, max_length: int):
-    
+    print(models)
     # if tokenizing_output != 'default':
     #     tokenizing_output = make_tuple(tokenizing_output)
     #     max_length = int(tokenizing_output[0])

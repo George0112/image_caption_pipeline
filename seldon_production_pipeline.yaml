@@ -17,9 +17,12 @@ spec:
   - componentSpecs:
     - spec:
         containers:
-        - image: chaowen/img_caption_predict:latest
+        - image: chaowen/img_caption_deploy:latest
           imagePullPolicy: Always
           name: prediction
+          volumeMounts:
+          - name: mypvc
+            mountPath: /mnt
           resources:
             requests:
               memory: 100Mi
