@@ -1,0 +1,7 @@
+tensorflow-gpu==1.15
+pillow
+scipy
+keras
+wget
+click
+numpy

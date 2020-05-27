@@ -1,0 +1,28 @@
+---
+apiVersion: machinelearning.seldon.io/v1alpha2
+kind: SeldonDeployment
+metadata:
+  name: "seldon-deployment-internal"
+  namespace: seldon-system
+spec:
+  name: seldon-deployment-internal
+  predictors:
+  - componentSpecs:
+    - spec:
+        containers:
+        containers:
+        - image: chaowen/keras_catsdogs_deploy:internal
+          imagePullPolicy: Always
+          name: prediction
+          resources:
+            requests:
+              memory: 1000Mi
+        terminationGracePeriodSeconds: 20
+    graph:
+      children: []
+      endpoint:
+        type: REST
+      name: prediction
+      type: MODEL
+    name: single-model
+    replicas: 1
