@@ -2,3 +2,4 @@
 .vscode
 *.tar.gz
 *.h5
+*checkpoints

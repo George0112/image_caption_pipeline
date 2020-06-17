@@ -7,9 +7,10 @@ import numpy as np
 import zipfile
 import wget
 import argparse
+import os
 
 parser = argparse.ArgumentParser(description='Process zip url')
-parser.add_argument('--zip-url', type=str, help='url of dataset', default="https://cloudprog-hw3-108065518.s3.amazonaws.com/sample.zip")
+parser.add_argument('--zip-url', type=str, help='url of dataset', default="http://140.114.79.72:9000/default/sample.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20200608%2F%2Fs3%2Faws4_request&X-Amz-Date=20200608T155608Z&X-Amz-Expires=432000&X-Amz-SignedHeaders=host&X-Amz-Signature=d494b841d91fec66f18364d42f686f49c76d06188b41e87682f185eeaa656c2e")
 parser.add_argument('--epoch', type=int, default=10)
 
 args = parser.parse_args()
@@ -18,10 +19,14 @@ zip_url = args.zip_url
 epoch = args.epoch
 
 #def run_pipeline(zip_url):
-wget.download(zip_url, out="/mnt/sample.zip")
+#wget.download(zip_url, out="/mnt/sample.zip")
+#os.system("ls /mnt")
+#print("extracting file")
     
-with zipfile.ZipFile("/mnt/sample.zip", 'r') as zip_ref:
-    zip_ref.extractall("/mnt/")
+#with zipfile.ZipFile("/mnt/sample.zip", 'r') as zip_ref:
+#    zip_ref.extractall("/mnt/")
+    
+#os.system("ls /mnt/sample*")
 
 print("download finished")
 
@@ -41,7 +46,7 @@ config.gpu_options.allow_growth = True
 sess = tf.Session(config = config)
 set_session(sess)
 
-DATASET_PATH  = '/mnt/sample'
+DATASET_PATH  = './sample'
 IMAGE_SIZE    = (299, 299)
 NUM_CLASSES   = 2
 BATCH_SIZE    = 8  # try reducing batch size or freeze more layers if your GPU runs out of memory

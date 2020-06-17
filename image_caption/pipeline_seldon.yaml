@@ -1,0 +1,306 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: image-caption-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 0.5.1, pipelines.kubeflow.org/pipeline_compilation_time: '2020-06-08T01:36:39.283202',
+    pipelines.kubeflow.org/pipeline_spec: '{"description": "A pipeline demonstrating
+      reproducible steps for image caption", "inputs": [{"default": "1Gi", "name":
+      "size_of_pvc", "optional": true}, {"default": "http://140.114.79.72:9000/default/ms-coco.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20200608%2F%2Fs3%2Faws4_request&X-Amz-Date=20200608T053252Z&X-Amz-Expires=432000&X-Amz-SignedHeaders=host&X-Amz-Signature=d474aaebcd79cf744dc08ab6d0d04b8c8fe7c9baf6d7557e575b19bb21fd8c34",
+      "name": "zip_url", "optional": true}, {"default": "/mnt/ms-coco", "name": "dataset_path",
+      "optional": true}, {"default": "/mnt/ms-coco/train2014/train2014", "name": "images_path",
+      "optional": true}, {"default": "/mnt/ms-coco/annotations_trainval2014/annotations/captions_train2014.json",
+      "name": "annotation_path", "optional": true}, {"default": "8", "name": "preprocessing_batch_size",
+      "optional": true}, {"default": "30000", "name": "num_examples", "optional":
+      true}, {"default": "20", "name": "epochs", "optional": true}, {"default": "16",
+      "name": "training_batch_size", "optional": true}, {"default": "512", "name":
+      "hidden_state_size", "optional": true}, {"default": "5000", "name": "vocab_size",
+      "optional": true}, {"default": "256", "name": "embedding_dim", "optional": true},
+      {"default": "50", "name": "max_length", "optional": true}], "name": "Image Caption"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 0.5.1}
+spec:
+  entrypoint: image-caption
+  templates:
+  - name: data-downloader
+    container:
+      args: [/microservice/pipeline_step.py, --zip-url, '{{inputs.parameters.zip_url}}']
+      command: [python]
+      image: chaowen/img_caption_data_downloader:latest
+      imagePullPolicy: Always
+      volumeMounts:
+      - {mountPath: /mnt, name: my-pvc}
+    inputs:
+      parameters:
+      - {name: my-pvc-name}
+      - {name: zip_url}
+    metadata:
+      labels: {pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+    volumes:
+    - name: my-pvc
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.my-pvc-name}}'}
+  - name: image-caption
+    inputs:
+      parameters:
+      - {name: annotation_path}
+      - {name: dataset_path}
+      - {name: embedding_dim}
+      - {name: epochs}
+      - {name: hidden_state_size}
+      - {name: images_path}
+      - {name: max_length}
+      - {name: num_examples}
+      - {name: preprocessing_batch_size}
+      - {name: size_of_pvc}
+      - {name: training_batch_size}
+      - {name: vocab_size}
+      - {name: zip_url}
+    dag:
+      tasks:
+      - name: data-downloader
+        template: data-downloader
+        dependencies: [my-pvc]
+        arguments:
+          parameters:
+          - {name: my-pvc-name, value: '{{tasks.my-pvc.outputs.parameters.my-pvc-name}}'}
+          - {name: zip_url, value: '{{inputs.parameters.zip_url}}'}
+      - name: my-pvc
+        template: my-pvc
+        arguments:
+          parameters:
+          - {name: size_of_pvc, value: '{{inputs.parameters.size_of_pvc}}'}
+      - name: prediction
+        template: prediction
+        dependencies: [my-pvc, training]
+        arguments:
+          parameters:
+          - {name: dataset_path, value: '{{inputs.parameters.dataset_path}}'}
+          - {name: embedding_dim, value: '{{inputs.parameters.embedding_dim}}'}
+          - {name: hidden_state_size, value: '{{inputs.parameters.hidden_state_size}}'}
+          - {name: max_length, value: '{{inputs.parameters.max_length}}'}
+          - {name: my-pvc-name, value: '{{tasks.my-pvc.outputs.parameters.my-pvc-name}}'}
+      - name: preprocesing
+        template: preprocesing
+        dependencies: [data-downloader, my-pvc]
+        arguments:
+          parameters:
+          - {name: annotation_path, value: '{{inputs.parameters.annotation_path}}'}
+          - {name: dataset_path, value: '{{inputs.parameters.dataset_path}}'}
+          - {name: images_path, value: '{{inputs.parameters.images_path}}'}
+          - {name: my-pvc-name, value: '{{tasks.my-pvc.outputs.parameters.my-pvc-name}}'}
+          - {name: num_examples, value: '{{inputs.parameters.num_examples}}'}
+          - {name: preprocessing_batch_size, value: '{{inputs.parameters.preprocessing_batch_size}}'}
+      - name: seldondeploy
+        template: seldondeploy
+        dependencies: [prediction]
+      - name: tokenizer
+        template: tokenizer
+        dependencies: [my-pvc, preprocesing]
+        arguments:
+          parameters:
+          - {name: dataset_path, value: '{{inputs.parameters.dataset_path}}'}
+          - {name: my-pvc-name, value: '{{tasks.my-pvc.outputs.parameters.my-pvc-name}}'}
+          - {name: vocab_size, value: '{{inputs.parameters.vocab_size}}'}
+      - name: training
+        template: training
+        dependencies: [my-pvc, tokenizer]
+        arguments:
+          parameters:
+          - {name: dataset_path, value: '{{inputs.parameters.dataset_path}}'}
+          - {name: embedding_dim, value: '{{inputs.parameters.embedding_dim}}'}
+          - {name: epochs, value: '{{inputs.parameters.epochs}}'}
+          - {name: hidden_state_size, value: '{{inputs.parameters.hidden_state_size}}'}
+          - {name: my-pvc-name, value: '{{tasks.my-pvc.outputs.parameters.my-pvc-name}}'}
+          - {name: training_batch_size, value: '{{inputs.parameters.training_batch_size}}'}
+  - name: my-pvc
+    resource:
+      action: create
+      manifest: |
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: '{{workflow.name}}-my-pvc'
+        spec:
+          accessModes:
+          - ReadWriteMany
+          resources:
+            requests:
+              storage: '{{inputs.parameters.size_of_pvc}}'
+    inputs:
+      parameters:
+      - {name: size_of_pvc}
+    outputs:
+      parameters:
+      - name: my-pvc-manifest
+        valueFrom: {jsonPath: '{}'}
+      - name: my-pvc-name
+        valueFrom: {jsonPath: '{.metadata.name}'}
+      - name: my-pvc-size
+        valueFrom: {jsonPath: '{.status.capacity.storage}'}
+    metadata:
+      labels: {pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+  - name: prediction
+    container:
+      args: [/microservice/pipeline_step.py, --dataset-path, '{{inputs.parameters.dataset_path}}',
+        --units, '{{inputs.parameters.hidden_state_size}}', --embedding-dim, '{{inputs.parameters.embedding_dim}}',
+        --max-length, '{{inputs.parameters.max_length}}']
+      command: [python]
+      image: chaowen/img_caption_predict:latest
+      imagePullPolicy: Always
+      volumeMounts:
+      - {mountPath: /mnt, name: my-pvc}
+    inputs:
+      parameters:
+      - {name: dataset_path}
+      - {name: embedding_dim}
+      - {name: hidden_state_size}
+      - {name: max_length}
+      - {name: my-pvc-name}
+    outputs:
+      artifacts:
+      - {name: mlpipeline-ui-metadata, path: /mlpipeline-ui-metadata.json}
+      - {name: mlpipeline-metrics, path: /mlpipeline-metrics.json}
+      - {name: prediction-tensorboard_dir, path: /mnt/ms-coco/valid/logs/}
+    metadata:
+      labels: {pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+    volumes:
+    - name: my-pvc
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.my-pvc-name}}'}
+  - name: preprocesing
+    container:
+      args: [/microservice/pipeline_step.py, --dataset-path, '{{inputs.parameters.dataset_path}}',
+        --images-path, '{{inputs.parameters.images_path}}', --annotation-path, '{{inputs.parameters.annotation_path}}',
+        --num-examples, '{{inputs.parameters.num_examples}}', --batch-size, '{{inputs.parameters.preprocessing_batch_size}}']
+      command: [python]
+      image: chaowen/img_caption_preprocess:latest
+      imagePullPolicy: Always
+      volumeMounts:
+      - {mountPath: /mnt, name: my-pvc}
+    inputs:
+      parameters:
+      - {name: annotation_path}
+      - {name: dataset_path}
+      - {name: images_path}
+      - {name: my-pvc-name}
+      - {name: num_examples}
+      - {name: preprocessing_batch_size}
+    metadata:
+      labels: {pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+    volumes:
+    - name: my-pvc
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.my-pvc-name}}'}
+  - name: seldondeploy
+    resource:
+      action: create
+      manifest: |
+        apiVersion: machinelearning.seldon.io/v1alpha2
+        kind: SeldonDeployment
+        metadata:
+          labels:
+            app: seldon
+          name: seldon-deployment-{{workflow.name}}
+          namespace: kubeflow
+        spec:
+          annotations:
+            deployment_version: v1
+            project_name: Image Captioning
+          name: seldon-deployment-{{workflow.name}}
+          oauth_key: oauth-key
+          oauth_secret: oauth-secret
+          predictors:
+          - annotations:
+              predictor_version: v1
+            componentSpecs:
+            - spec:
+                containers:
+                - image: chaowen/img_caption_deploy:latest
+                  imagePullPolicy: Always
+                  name: prediction
+                  resources:
+                    requests:
+                      memory: 100Mi
+                  volumeMounts:
+                  - mountPath: /mnt
+                    name: mypvc
+                terminationGracePeriodSeconds: 20
+                volumes:
+                - name: mypvc
+                  persistentVolumeClaim:
+                    claimName: '{{workflow.name}}-my-pvc'
+            graph:
+              childern: []
+              endpoint:
+                type: REST
+              name: prediction
+              type: MODEL
+            name: single-model
+            replicas: 1
+    outputs:
+      parameters:
+      - name: seldondeploy-manifest
+        valueFrom: {jsonPath: '{}'}
+      - name: seldondeploy-name
+        valueFrom: {jsonPath: '{.metadata.name}'}
+    metadata:
+      labels: {pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+  - name: tokenizer
+    container:
+      args: [/microservice/pipeline_step.py, --dataset-path, '{{inputs.parameters.dataset_path}}',
+        --top-k, '{{inputs.parameters.vocab_size}}']
+      command: [python]
+      image: chaowen/img_caption_tokenize:latest
+      imagePullPolicy: Always
+      volumeMounts:
+      - {mountPath: /mnt, name: my-pvc}
+    inputs:
+      parameters:
+      - {name: dataset_path}
+      - {name: my-pvc-name}
+      - {name: vocab_size}
+    metadata:
+      labels: {pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+    volumes:
+    - name: my-pvc
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.my-pvc-name}}'}
+  - name: training
+    container:
+      args: [/microservice/pipeline_step.py, --dataset-path, '{{inputs.parameters.dataset_path}}',
+        --epochs, '{{inputs.parameters.epochs}}', --batch-size, '{{inputs.parameters.training_batch_size}}',
+        --embedding-dim, '{{inputs.parameters.embedding_dim}}', --units, '{{inputs.parameters.hidden_state_size}}']
+      command: [python]
+      image: chaowen/img_caption_train:latest
+      imagePullPolicy: Always
+      volumeMounts:
+      - {mountPath: /mnt, name: my-pvc}
+    inputs:
+      parameters:
+      - {name: dataset_path}
+      - {name: embedding_dim}
+      - {name: epochs}
+      - {name: hidden_state_size}
+      - {name: my-pvc-name}
+      - {name: training_batch_size}
+    outputs:
+      artifacts:
+      - {name: mlpipeline-ui-metadata, path: /mlpipeline-ui-metadata.json}
+      - {name: mlpipeline-metrics, path: /mlpipeline-metrics.json}
+      - {name: training-tensorboard_dir, path: /mnt/ms-coco/train/logs/}
+    metadata:
+      labels: {pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+    volumes:
+    - name: my-pvc
+      persistentVolumeClaim: {claimName: '{{inputs.parameters.my-pvc-name}}'}
+  arguments:
+    parameters:
+    - {name: size_of_pvc, value: 1Gi}
+    - {name: zip_url, value: 'http://140.114.79.72:9000/default/ms-coco.zip?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=minioadmin%2F20200608%2F%2Fs3%2Faws4_request&X-Amz-Date=20200608T053252Z&X-Amz-Expires=432000&X-Amz-SignedHeaders=host&X-Amz-Signature=d474aaebcd79cf744dc08ab6d0d04b8c8fe7c9baf6d7557e575b19bb21fd8c34'}
+    - {name: dataset_path, value: /mnt/ms-coco}
+    - {name: images_path, value: /mnt/ms-coco/train2014/train2014}
+    - {name: annotation_path, value: /mnt/ms-coco/annotations_trainval2014/annotations/captions_train2014.json}
+    - {name: preprocessing_batch_size, value: '8'}
+    - {name: num_examples, value: '30000'}
+    - {name: epochs, value: '20'}
+    - {name: training_batch_size, value: '16'}
+    - {name: hidden_state_size, value: '512'}
+    - {name: vocab_size, value: '5000'}
+    - {name: embedding_dim, value: '256'}
+    - {name: max_length, value: '50'}
+  serviceAccountName: default

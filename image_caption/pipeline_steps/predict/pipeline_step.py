@@ -20,6 +20,10 @@ from collections import namedtuple
 def predict(dataset_path: str, 
         embedding_dim: int, units: int, max_length: int):
     print(models)
+    
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    print("Num GPUs Available: ", len(gpus))    
+    tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5888)])
     # if tokenizing_output != 'default':
     #     tokenizing_output = make_tuple(tokenizing_output)
     #     max_length = int(tokenizing_output[0])

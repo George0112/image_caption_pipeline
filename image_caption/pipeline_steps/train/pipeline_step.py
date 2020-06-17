@@ -24,8 +24,9 @@ from collections import namedtuple
 def train_model(dataset_path: str,  
         batch_size: int, embedding_dim: int, units: int, epochs: int):
     
-    print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    print("Num GPUs Available: ", len(gpus))    
+    tf.config.experimental.VirtualDeviceConfiguration(memory_limit=(5888))
     # Convert output from string to tuple and unpack
     # preprocess_output = make_tuple(preprocess_output)
     # tokenizing_output = make_tuple(tokenizing_output)

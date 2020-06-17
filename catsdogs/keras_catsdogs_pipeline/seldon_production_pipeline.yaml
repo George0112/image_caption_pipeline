@@ -17,7 +17,7 @@ spec:
   - componentSpecs:
     - spec:
         containers:
-        - image: chaowen/keras_catsdogs_deploy:internal
+        - image: chaowen/keras_catsdogs_deploy
           imagePullPolicy: Always
           name: prediction
           volumeMounts:

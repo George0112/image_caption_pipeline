@@ -16,6 +16,10 @@ import os
 def preprocess(dataset_path, images_path, annotation_path, num_examples, batch_size: int):
 
     print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    
+    tf.config.experimental.set_virtual_device_configuration(gpus[0],
+                                                           [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5120)])
 
     OUTPUT_DIR = dataset_path + '/preprocess/'
     
